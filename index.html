@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deletion Detector — OSINT Social Deletion Monitor</title>
+<meta name="description" content="Detect coordinated social media deletion patterns that precede major corporate events. An OSINT tool from the PARALLAX universe.">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a0f;
+  color: #c0c0c0;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 40px 24px;
+}
+h1 {
+  font-size: 14px;
+  letter-spacing: 4px;
+  color: #00d4aa;
+  font-weight: 400;
+  margin-bottom: 4px;
+}
+.subtitle {
+  color: #555;
+  font-size: 12px;
+  margin-bottom: 32px;
+}
+.intro {
+  color: #777;
+  font-size: 13px;
+  line-height: 1.7;
+  margin-bottom: 32px;
+  max-width: 700px;
+}
+.intro strong { color: #999; }
+
+.alert-panel {
+  border: 1px solid #1a1a2a;
+  border-radius: 4px;
+  padding: 20px 24px;
+  margin-bottom: 32px;
+  transition: all 0.5s ease;
+}
+.alert-panel.normal { border-color: #1a3a2a; background: rgba(0,212,170,0.03); }
+.alert-panel.elevated { border-color: #3a3a1a; background: rgba(255,200,0,0.03); }
+.alert-panel.high { border-color: #3a1a1a; background: rgba(255,100,100,0.05); }
+.alert-panel.critical { border-color: #ff4444; background: rgba(255,68,68,0.08); }
+.alert-label { font-size: 11px; letter-spacing: 2px; margin-bottom: 12px; }
+.alert-panel.normal .alert-label { color: #00d4aa; }
+.alert-panel.elevated .alert-label { color: #ffc800; }
+.alert-panel.high .alert-label { color: #ff6b6b; }
+.alert-panel.critical .alert-label { color: #ff4444; }
+.alert-score {
+  font-size: 36px;
+  font-weight: 700;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  margin-bottom: 4px;
+  transition: color 0.3s;
+}
+.alert-panel.normal .alert-score { color: #00d4aa; }
+.alert-panel.elevated .alert-score { color: #ffc800; }
+.alert-panel.high .alert-score { color: #ff6b6b; }
+.alert-panel.critical .alert-score { color: #ff4444; }
+.alert-meta { color: #555; font-size: 12px; }
+.alert-meta span { margin-right: 16px; }
+.alert-deviation { font-weight: 700; }
+
+.index-bar {
+  height: 6px;
+  background: #1a1a2a;
+  border-radius: 3px;
+  margin: 12px 0 0 0;
+  overflow: hidden;
+}
+.index-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease, background 0.4s ease;
+}
+.alert-panel.normal .index-bar-fill { background: #00d4aa; }
+.alert-panel.elevated .index-bar-fill { background: #ffc800; }
+.alert-panel.high .index-bar-fill { background: #ff6b6b; }
+.alert-panel.critical .index-bar-fill { background: #ff4444; }
+
+.section-title {
+  font-size: 11px;
+  letter-spacing: 2px;
+  color: #00d4aa;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(0,212,170,0.15);
+}
+.timeline {
+  margin-bottom: 32px;
+}
+.timeline-row {
+  display: flex;
+  align-items: center;
+  height: 20px;
+  margin-bottom: 2px;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.timeline-row.visible { opacity: 1; }
+.timeline-ts {
+  width: 130px;
+  flex-shrink: 0;
+  color: #444;
+  font-size: 11px;
+}
+.timeline-bar-container {
+  flex: 1;
+  height: 14px;
+  position: relative;
+}
+.timeline-bar {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.6s ease, background 0.3s;
+  min-width: 2px;
+}
+.timeline-bar.normal { background: #00d4aa; opacity: 0.5; }
+.timeline-bar.elevated { background: #ffc800; opacity: 0.7; }
+.timeline-bar.high { background: #ff6b6b; opacity: 0.85; }
+.timeline-bar.critical { background: #ff4444; opacity: 1; }
+.timeline-score {
+  width: 80px;
+  text-align: right;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #555;
+  margin-left: 8px;
+}
+.timeline-alert-dot {
+  width: 24px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 10px;
+}
+
+.categories {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 32px;
+}
+@media (max-width: 600px) { .categories { grid-template-columns: 1fr; } }
+.cat-card {
+  border: 1px solid #1a1a2a;
+  border-radius: 4px;
+  padding: 16px;
+  transition: border-color 0.3s;
+}
+.cat-name { color: #888; font-size: 11px; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
+.cat-numbers { display: flex; justify-content: space-between; align-items: baseline; }
+.cat-count { font-size: 20px; font-weight: 700; color: #ccc; }
+.cat-count-label { font-size: 10px; color: #555; margin-left: 4px; }
+.cat-change { font-size: 14px; font-weight: 700; }
+.cat-change-label { font-size: 10px; color: #555; margin-left: 2px; }
+.cat-change.spike { color: #ff4444; }
+.cat-change.flat { color: #555; }
+.cat-bar {
+  height: 4px;
+  background: #1a1a2a;
+  border-radius: 2px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+.cat-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 1s ease;
+}
+.cat-card.spike { border-color: rgba(255,68,68,0.3); }
+.cat-card.spike .cat-bar-fill { background: #ff4444; }
+.cat-card.flat .cat-bar-fill { background: #333; }
+
+.controls {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 32px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+button {
+  background: transparent;
+  border: 1px solid rgba(0,212,170,0.3);
+  color: #00d4aa;
+  padding: 8px 20px;
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.2s;
+}
+button:hover { background: rgba(0,212,170,0.1); border-color: #00d4aa; }
+button:disabled { opacity: 0.3; cursor: default; }
+button.active { background: rgba(0,212,170,0.15); border-color: #00d4aa; }
+.speed-label { color: #444; font-size: 11px; margin-left: 8px; }
+.status-text { color: #444; font-size: 11px; margin-left: auto; }
+
+.footer {
+  margin-top: 48px;
+  padding-top: 24px;
+  border-top: 1px solid #1a1a2a;
+  color: #444;
+  font-size: 11px;
+}
+.footer a { color: #00d4aa; text-decoration: none; }
+.footer a:hover { text-decoration: underline; }
+.footer p { margin-bottom: 4px; }
+
+.day-marker {
+  color: #333;
+  font-size: 10px;
+  letter-spacing: 1px;
+  padding: 6px 0 2px 0;
+}
+.explainer {
+  color: #555;
+  font-size: 11px;
+  line-height: 1.6;
+  margin-bottom: 16px;
+  max-width: 700px;
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h1>DELETION DETECTOR</h1>
+  <p class="subtitle">OSINT Social Deletion Monitor</p>
+
+  <p class="intro">Before a major corporate event — acquisition, restructuring, layoffs — employees start scrubbing. LinkedIn bios stripped. Employer tags removed. Resume gaps smoothed over. Individually invisible. <strong>In aggregate, the deletion rate across company-linked accounts spikes 48-72 hours before the announcement.</strong> This tool simulates 14 days of professional network activity at a fictional company, then introduces a pre-announcement deletion wave. Watch for the signal.</p>
+
+  <div class="controls">
+    <button id="btn-run" onclick="startSimulation()">RUN SIMULATION</button>
+    <button id="btn-reset" onclick="resetSimulation()" disabled>RESET</button>
+    <span class="speed-label">Speed:</span>
+    <button id="btn-1x" class="active" onclick="setSpeed(1)">1x</button>
+    <button id="btn-4x" onclick="setSpeed(4)">4x</button>
+    <button id="btn-10x" onclick="setSpeed(10)">10x</button>
+    <span class="status-text" id="status">Ready</span>
+  </div>
+
+  <div class="alert-panel normal" id="alert-panel">
+    <div class="alert-label" id="alert-label">STANDBY</div>
+    <div class="alert-score" id="alert-score">0.0000</div>
+    <div class="alert-meta">
+      <span>Deviation from baseline: <span class="alert-deviation" id="alert-deviation">+0.00σ</span></span>
+      <span>Profile changes: <span id="alert-events">0</span> (last 6h)</span>
+      <span>7-day avg: <span id="alert-baseline">—</span></span>
+    </div>
+    <div class="index-bar"><div class="index-bar-fill" id="index-bar-fill" style="width: 0%"></div></div>
+  </div>
+
+  <div class="section-title">DELETION INDEX TIMELINE</div>
+  <p class="explainer">Each bar is one 6-hour reading. The score measures how far insider profile-change activity (executive, engineering, HR, sales) deviates from its rolling 7-day average. Longer bars = more anomalous. Color shifts from green (normal) to red (statistically significant coordinated pattern).</p>
+  <div class="timeline" id="timeline"></div>
+
+  <div class="section-title" style="margin-top: 32px;">CATEGORY BREAKDOWN: BASELINE vs PRE-ANNOUNCEMENT</div>
+  <p class="explainer">Profile changes in the 48-hour spike window compared to the prior 48-hour baseline, by employee category. Insiders who know move first.</p>
+  <div class="categories" id="categories">
+    <div class="cat-card" id="cat-executive">
+      <div class="cat-name">EXECUTIVE / C-SUITE</div>
+      <div class="cat-numbers"><span><span class="cat-count" id="cat-count-executive">—</span><span class="cat-count-label">events</span></span><span><span class="cat-change" id="cat-change-executive">—</span><span class="cat-change-label">vs baseline</span></span></div>
+      <div class="cat-bar"><div class="cat-bar-fill" id="cat-bar-executive" style="width: 0%"></div></div>
+    </div>
+    <div class="cat-card" id="cat-engineering">
+      <div class="cat-name">ENGINEERING / PRODUCT</div>
+      <div class="cat-numbers"><span><span class="cat-count" id="cat-count-engineering">—</span><span class="cat-count-label">events</span></span><span><span class="cat-change" id="cat-change-engineering">—</span><span class="cat-change-label">vs baseline</span></span></div>
+      <div class="cat-bar"><div class="cat-bar-fill" id="cat-bar-engineering" style="width: 0%"></div></div>
+    </div>
+    <div class="cat-card" id="cat-hr_recruiting">
+      <div class="cat-name">HR / RECRUITING</div>
+      <div class="cat-numbers"><span><span class="cat-count" id="cat-count-hr_recruiting">—</span><span class="cat-count-label">events</span></span><span><span class="cat-change" id="cat-change-hr_recruiting">—</span><span class="cat-change-label">vs baseline</span></span></div>
+      <div class="cat-bar"><div class="cat-bar-fill" id="cat-bar-hr_recruiting" style="width: 0%"></div></div>
+    </div>
+    <div class="cat-card" id="cat-general">
+      <div class="cat-name">GENERAL LINKEDIN</div>
+      <div class="cat-numbers"><span><span class="cat-count" id="cat-count-general">—</span><span class="cat-count-label">events</span></span><span><span class="cat-change" id="cat-change-general">—</span><span class="cat-change-label">vs baseline</span></span></div>
+      <div class="cat-bar"><div class="cat-bar-fill" id="cat-bar-general" style="width: 0%"></div></div>
+    </div>
+  </div>
+
+  <div class="section-title" style="margin-top: 32px;">RUN IT YOURSELF</div>
+  <p class="explainer" style="margin-bottom: 12px;">This demo uses simulated data. The Python CLI in the <a href="https://github.com/scm7k/deletion-detector" style="color: #00d4aa;">GitHub repo</a> can analyze real datasets and monitor live sources via the Wayback Machine CDX API.</p>
+  <div style="background: rgba(255,255,255,0.02); border: 1px solid #1a1a2a; border-radius: 4px; padding: 16px; margin-bottom: 12px; font-size: 12px; line-height: 1.8;">
+    <span style="color: #555;"># run the same demo in your terminal</span><br>
+    python detector.py --demo<br><br>
+    <span style="color: #555;"># analyze a saved dataset</span><br>
+    python detector.py analyze events.json<br><br>
+    <span style="color: #555;"># monitor a live URL for page disappearances</span><br>
+    python detector.py monitor "example.com/profiles/*" --interval 300
+  </div>
+  <p class="explainer">Requires Python 3.10+. No dependencies except <code style="color: #888;">requests</code> for live monitoring. <a href="https://github.com/scm7k/deletion-detector" style="color: #00d4aa;">View source on GitHub →</a></p>
+
+  <div class="footer">
+    <p>The deletion index is a concept from <a href="https://scm7k.com">PARALLAX</a> by scm7k — a novel about prediction markets, reflexivity, and the feedback loop between prediction and causation.</p>
+    <p>The underlying principle is real: coordinated behavioral changes in aggregate data can signal impending events before they're announced.</p>
+    <p style="margin-top: 12px;"><a href="https://github.com/scm7k/parallax">GitHub</a> · <a href="https://scm7k.com/read">Read Chapter 1</a> · <a href="https://scm7k.com/essay_deletion.html">The Deletion Signal (essay)</a></p>
+  </div>
+</div>
+
+<script>
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    var t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+}
+
+function gaussRandom(rng) {
+  let u = 0, v = 0;
+  while (u === 0) u = rng();
+  while (v === 0) v = rng();
+  return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+}
+
+const BASELINE_RATES = {
+  executive: 0.8,
+  engineering: 3.5,
+  hr_recruiting: 1.2,
+  sales: 2.0,
+  general: 40.0
+};
+
+// Pre-announcement: execs and HR know first, engineering follows, general stays flat
+const SPIKE_MULTIPLIERS = {
+  executive: 6.0,
+  engineering: 4.2,
+  hr_recruiting: 5.0,
+  sales: 2.8,
+  general: 1.0
+};
+
+const INSIDER_CATS = new Set(['executive', 'engineering', 'hr_recruiting', 'sales']);
+const EVENT_TYPES = ['profile_scrub', 'employer_removal', 'post_deletion', 'endorsement_removal'];
+const EVENT_WEIGHTS = { profile_scrub: 0.4, employer_removal: 1.0, post_deletion: 0.7, endorsement_removal: 0.3 };
+
+function generateEvents(rng) {
+  const events = [];
+  const start = new Date(Date.UTC(2028, 2, 10, 0, 0, 0));
+  const spikeBegin = new Date(start.getTime() + 12 * 24 * 3600000);
+  const spikeEnd = new Date(spikeBegin.getTime() + 48 * 3600000);
+  const totalHours = 14 * 24;
+
+  for (let hour = 0; hour < totalHours; hour++) {
+    const currentTime = new Date(start.getTime() + hour * 3600000);
+    const hourOfDay = currentTime.getUTCHours();
+
+    for (const category of Object.keys(BASELINE_RATES)) {
+      let rate = BASELINE_RATES[category];
+      // Business hours pattern (stronger than military — LinkedIn is a work tool)
+      const timeFactor = (hourOfDay >= 8 && hourOfDay <= 19)
+        ? 0.2 + 0.8 * Math.sin(Math.PI * (hourOfDay - 8) / 11)
+        : 0.1;
+      // Weekend dip
+      const dayOfWeek = currentTime.getUTCDay();
+      const weekendFactor = (dayOfWeek === 0 || dayOfWeek === 6) ? 0.3 : 1.0;
+
+      rate *= timeFactor * weekendFactor;
+
+      if (currentTime >= spikeBegin && currentTime < spikeEnd) {
+        const hoursIn = (currentTime - spikeBegin) / 3600000;
+        const hoursLeft = (spikeEnd - currentTime) / 3600000;
+        let ramp = 1.0;
+        if (hoursIn < 6) ramp = hoursIn / 6.0;
+        else if (hoursLeft < 6) ramp = hoursLeft / 6.0;
+        rate *= 1.0 + (SPIKE_MULTIPLIERS[category] - 1.0) * ramp;
+      }
+
+      const nEvents = Math.max(0, Math.round(rate + gaussRandom(rng) * Math.sqrt(Math.max(rate, 0.5))));
+      for (let i = 0; i < nEvents; i++) {
+        const minute = Math.floor(rng() * 60);
+        const ts = new Date(currentTime.getTime() + minute * 60000);
+        const typeIdx = Math.floor(rng() * 4);
+        let magnitude = 1;
+        if (EVENT_TYPES[typeIdx] === 'post_deletion') magnitude = 2 + Math.floor(rng() * 30);
+        else if (EVENT_TYPES[typeIdx] === 'endorsement_removal') magnitude = 1 + Math.floor(rng() * 15);
+
+        events.push({
+          timestamp: ts.getTime(),
+          category: category,
+          event_type: EVENT_TYPES[typeIdx],
+          magnitude: magnitude
+        });
+      }
+    }
+  }
+  events.sort((a, b) => a.timestamp - b.timestamp);
+  return events;
+}
+
+function weightedCount(events) {
+  let total = 0;
+  for (const e of events) {
+    const w = EVENT_WEIGHTS[e.event_type] || 0.3;
+    total += w * Math.log1p(e.magnitude);
+  }
+  return total;
+}
+
+function computeIndex(allEvents, atTime, baselineHours, windowHours) {
+  const windowMs = windowHours * 3600000;
+  const insiderEvents = allEvents.filter(e => INSIDER_CATS.has(e.category));
+  const currentEvents = insiderEvents.filter(e => e.timestamp > atTime - windowMs && e.timestamp <= atTime);
+  const currentScore = weightedCount(currentEvents);
+
+  const hourlyScores = [];
+  for (let h = 0; h < baselineHours; h++) {
+    const t = atTime - h * 3600000;
+    const wEvents = insiderEvents.filter(e => e.timestamp > t - windowMs && e.timestamp <= t);
+    hourlyScores.push(weightedCount(wEvents));
+  }
+
+  const mean = hourlyScores.reduce((a, b) => a + b, 0) / hourlyScores.length;
+  let stdev = 0;
+  if (hourlyScores.length > 2) {
+    const variance = hourlyScores.reduce((sum, v) => sum + (v - mean) ** 2, 0) / (hourlyScores.length - 1);
+    stdev = Math.sqrt(variance);
+  }
+  if (stdev === 0) stdev = 0.01;
+
+  const deviation = (currentScore - mean) / stdev;
+  const score = Math.min(1.0, Math.max(0.0, 0.5 + deviation / 10.0));
+
+  let alert = 'normal';
+  if (deviation >= 4.0) alert = 'critical';
+  else if (deviation >= 3.0) alert = 'high';
+  else if (deviation >= 2.0) alert = 'elevated';
+
+  return {
+    timestamp: atTime,
+    score: score,
+    baseline: mean,
+    deviation: deviation,
+    eventCount: currentEvents.length,
+    alertLevel: alert
+  };
+}
+
+let animationTimer = null;
+let speed = 1;
+let readings = [];
+let events = [];
+
+function setSpeed(s) {
+  speed = s;
+  ['1x','4x','10x'].forEach(id => document.getElementById('btn-' + id).classList.remove('active'));
+  document.getElementById('btn-' + s + 'x').classList.add('active');
+}
+
+function resetSimulation() {
+  if (animationTimer) clearTimeout(animationTimer);
+  animationTimer = null;
+  readings = [];
+  events = [];
+  document.getElementById('timeline').innerHTML = '';
+  document.getElementById('btn-run').disabled = false;
+  document.getElementById('btn-reset').disabled = true;
+  document.getElementById('status').textContent = 'Ready';
+  updateAlertPanel({ score: 0, deviation: 0, eventCount: 0, baseline: 0, alertLevel: 'normal' });
+  document.getElementById('alert-label').textContent = 'STANDBY';
+  document.getElementById('index-bar-fill').style.width = '0%';
+  ['executive', 'engineering', 'hr_recruiting', 'general'].forEach(cat => {
+    document.getElementById('cat-count-' + cat).textContent = '—';
+    document.getElementById('cat-change-' + cat).textContent = '—';
+    document.getElementById('cat-bar-' + cat).style.width = '0%';
+    document.getElementById('cat-' + cat).className = 'cat-card';
+  });
+}
+
+function updateAlertPanel(reading) {
+  const panel = document.getElementById('alert-panel');
+  panel.className = 'alert-panel ' + reading.alertLevel;
+  document.getElementById('alert-label').textContent = reading.alertLevel.toUpperCase();
+  document.getElementById('alert-score').textContent = reading.score.toFixed(4);
+  document.getElementById('alert-deviation').textContent = (reading.deviation >= 0 ? '+' : '') + reading.deviation.toFixed(2) + 'σ';
+  document.getElementById('alert-events').textContent = reading.eventCount;
+  document.getElementById('alert-baseline').textContent = reading.baseline.toFixed(1);
+  document.getElementById('index-bar-fill').style.width = (reading.score * 100) + '%';
+}
+
+function updateCategories(allEvents, spikeStart, spikeEnd) {
+  const baselineStart = spikeStart - 2 * 24 * 3600000;
+  const baselineEvents = allEvents.filter(e => e.timestamp >= baselineStart && e.timestamp < spikeStart);
+  const spikeEvents = allEvents.filter(e => e.timestamp >= spikeStart && e.timestamp <= spikeEnd);
+
+  const cats = ['executive', 'engineering', 'hr_recruiting', 'general'];
+  const maxChange = 600;
+
+  for (const cat of cats) {
+    const bCount = baselineEvents.filter(e => e.category === cat).length;
+    const oCount = spikeEvents.filter(e => e.category === cat).length;
+    const change = bCount > 0 ? ((oCount - bCount) / bCount * 100) : 0;
+
+    document.getElementById('cat-count-' + cat).textContent = oCount;
+    const changeEl = document.getElementById('cat-change-' + cat);
+    if (change > 50) {
+      changeEl.textContent = '+' + Math.round(change) + '%';
+      changeEl.className = 'cat-change spike';
+      document.getElementById('cat-' + cat).className = 'cat-card spike';
+    } else {
+      changeEl.textContent = (change >= 0 ? '+' : '') + Math.round(change) + '%';
+      changeEl.className = 'cat-change flat';
+      document.getElementById('cat-' + cat).className = 'cat-card flat';
+    }
+    document.getElementById('cat-bar-' + cat).style.width = Math.max(2, Math.abs(change) / maxChange * 100) + '%';
+  }
+}
+
+function addTimelineRow(reading, index) {
+  const timeline = document.getElementById('timeline');
+  const d = new Date(reading.timestamp);
+  const prevReading = index > 0 ? readings[index - 1] : null;
+  const prevDay = prevReading ? new Date(prevReading.timestamp).getUTCDate() : null;
+  const currentDay = d.getUTCDate();
+
+  if (prevDay !== currentDay) {
+    const marker = document.createElement('div');
+    marker.className = 'day-marker';
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    marker.textContent = dayNames[d.getUTCDay()] + ' Mar ' + currentDay;
+    timeline.appendChild(marker);
+  }
+
+  const row = document.createElement('div');
+  row.className = 'timeline-row';
+  const ts = d.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+  const barWidth = Math.max(1, reading.score * 100);
+
+  const alertDots = { normal: '', elevated: '▪', high: '▪▪', critical: '▪▪▪' };
+  const alertColors = { normal: '#00d4aa', elevated: '#ffc800', high: '#ff6b6b', critical: '#ff4444' };
+
+  const sigmaStr = (reading.deviation >= 0 ? '+' : '') + reading.deviation.toFixed(1) + 'σ';
+  row.innerHTML = `
+    <span class="timeline-ts">${ts}</span>
+    <div class="timeline-bar-container">
+      <div class="timeline-bar ${reading.alertLevel}" style="width: 0%"></div>
+    </div>
+    <span class="timeline-score" style="color: ${alertColors[reading.alertLevel]}">${sigmaStr}</span>
+    <span class="timeline-alert-dot" style="color: ${alertColors[reading.alertLevel]}">${alertDots[reading.alertLevel]}</span>
+  `;
+
+  timeline.appendChild(row);
+  requestAnimationFrame(() => {
+    row.classList.add('visible');
+    row.querySelector('.timeline-bar').style.width = barWidth + '%';
+  });
+  row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function startSimulation() {
+  document.getElementById('btn-run').disabled = true;
+  document.getElementById('btn-reset').disabled = false;
+  document.getElementById('status').textContent = 'Generating events...';
+
+  const rng = mulberry32(42);
+  events = generateEvents(rng);
+
+  const start = new Date(Date.UTC(2028, 2, 10)).getTime();
+  const spikeStart = start + 12 * 24 * 3600000;
+  const spikeEnd = spikeStart + 48 * 3600000;
+
+  readings = [];
+  for (let hour = 7 * 24; hour < 14 * 24; hour += 6) {
+    const t = start + hour * 3600000;
+    readings.push(computeIndex(events, t, 168, 6));
+  }
+
+  document.getElementById('status').textContent = 'Running...';
+
+  let i = 0;
+  function showNext() {
+    if (i >= readings.length) {
+      document.getElementById('status').textContent = `Complete — ${events.length.toLocaleString()} events analyzed`;
+      updateCategories(events, spikeStart, spikeEnd);
+      return;
+    }
+
+    const reading = readings[i];
+    addTimelineRow(reading, i);
+    updateAlertPanel(reading);
+
+    if (reading.timestamp >= spikeStart) {
+      updateCategories(events, spikeStart, Math.min(reading.timestamp, spikeEnd));
+    }
+
+    const dateStr = new Date(reading.timestamp).toISOString().slice(0, 16);
+    document.getElementById('status').textContent = dateStr + ' UTC';
+
+    i++;
+    animationTimer = setTimeout(showNext, Math.max(30, 300 / speed));
+  }
+
+  showNext();
+}
+</script>
+</body>
+</html>
